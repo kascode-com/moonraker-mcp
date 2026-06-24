@@ -1,0 +1,14 @@
+.env
+*.env
+!.env.example
+printers.toml
+printers.json
+deploy/deploy.ps1
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/

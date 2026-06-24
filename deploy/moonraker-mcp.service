@@ -1,0 +1,18 @@
+[Unit]
+Description=Moonraker MCP server
+Documentation=https://moonraker.readthedocs.io/en/latest/external_api/introduction/
+After=network-online.target moonraker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Adjust if you installed elsewhere.
+WorkingDirectory=/home/pi/moonraker-mcp
+EnvironmentFile=/etc/moonraker-mcp.env
+ExecStart=/home/pi/moonraker-mcp/venv/bin/python -m moonraker_mcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

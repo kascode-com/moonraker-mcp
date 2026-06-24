@@ -1,0 +1,18 @@
+# Multiple-printer configuration. Copy to `printers.toml` (in the working
+# directory) or point PRINTERS_FILE at it. When present, this takes precedence
+# over the single-printer MOONRAKER_URL/MOONRAKER_API_KEY env vars.
+#
+# Each [[printers]] block defines one Moonraker instance. Exactly one may set
+# `primary = true` (it's the default when a tool's `printer` arg is omitted);
+# if none is marked, the first one wins. Names must be unique.
+
+[[printers]]
+name = "voron"
+url = "http://voron.local:7125"
+primary = true
+# api_key = "..."          # only if this Moonraker requires one
+
+[[printers]]
+name = "ender"
+url = "http://ender.local:7125"
+# api_key = "..."
