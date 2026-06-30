@@ -47,11 +47,28 @@ run without confirmation.
 
 ## Requirements
 
-- **Python 3.10+**
+- **Python 3.10+** (hard requirement - the `mcp` SDK and several deps refuse to
+  install on anything older)
 - A reachable **Moonraker** instance (Klipper printer), local or remote
 - For the deploy path: a **Linux host with systemd** (e.g. Raspberry Pi OS) -
   the install script sets up a systemd service. The server itself is pure
   Python and also runs on Windows/macOS for local dev.
+
+> ### ⚠️ Check your Python version before installing on a printer host
+>
+> Run `python3 --version` **first**. Many Klipper/Moonraker hosts run older OS
+> images that ship Python **3.9 or earlier** - notably **Debian Bullseye** and
+> the legacy **Raspberry Pi OS** image, and older **Armbian** builds (some on
+> 3.8). `bullseye-backports` does *not* ship a newer interpreter, so `apt` won't
+> save you. If your `python3` is below 3.10, `bash deploy/install.sh` will fail
+> at dependency resolution - **before** touching your printer config.
+>
+> Fixes, easiest first:
+> - Use a **Bookworm**-based image (ships Python 3.11).
+> - Run the server in **Docker** with a `python:3.11-slim` base - sidesteps the
+>   host interpreter entirely.
+> - Install 3.10+ via **pyenv** and point the service's venv at it (the systemd
+>   unit already calls an explicit `venv/bin/python`).
 
 ## Configuration
 
@@ -110,6 +127,8 @@ mcp dev src/moonraker_mcp/server.py   # or use the Inspector against the running
 ```
 
 ## Deploy on the Raspberry Pi
+
+> **Before you start:** run `python3 --version` on the Pi and confirm it's 3.10+ (see the [Python version warning](#requirements) above) - the install will fail on Bullseye/older images otherwise.
 
 First-time install, run on the Pi:
 
