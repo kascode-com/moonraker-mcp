@@ -31,6 +31,8 @@ import os
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .confirmation import GcodeGate, parse_command_list
+
 try:  # Python 3.11+
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - depends on interpreter version
@@ -75,7 +77,7 @@ class Settings(BaseSettings):
 
     Env vars (no prefix): ``MOONRAKER_URL``, ``MOONRAKER_API_KEY``,
     ``PRINTERS_FILE``, ``MCP_HOST``, ``MCP_PORT``, ``MCP_AUTH_TOKEN``,
-    ``REQUEST_TIMEOUT``.
+    ``REQUEST_TIMEOUT``, ``CONFIRM_GCODE_COMMANDS``.
     """
 
     model_config = SettingsConfigDict(
@@ -99,12 +101,21 @@ class Settings(BaseSettings):
 
     request_timeout: float = Field(default=10.0)
 
+    # Extra G-code commands/macros (comma or space separated) that run_gcode and
+    # run_macro only execute with confirm=true, on top of the built-in heater and
+    # restart commands. Use it for printer macros that heat or restart.
+    confirm_gcode_commands: str = Field(default="")
+
     @field_validator("moonraker_api_key", "mcp_auth_token", "printers_file", mode="before")
     @classmethod
     def _blank_to_none(cls, v: object) -> object:
         if isinstance(v, str) and v.strip() == "":
             return None
         return v
+
+    def gcode_gate(self) -> GcodeGate:
+        """The G-code confirmation gate: built-in commands plus CONFIRM_GCODE_COMMANDS."""
+        return GcodeGate(parse_command_list(self.confirm_gcode_commands))
 
     def resolve_printers(self) -> list[PrinterConfig]:
         """Return the configured printers, from a file if present else the

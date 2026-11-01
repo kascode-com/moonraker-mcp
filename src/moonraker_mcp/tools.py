@@ -2,7 +2,7 @@
 
 Each tool is a plain async function taking the :class:`MoonrakerClient` as its
 first argument so it can be unit-tested directly with a mocked client.
-:func:`register_tools` exposes them on a FastMCP instance with a ``printer``
+:func:`register_tools` exposes them on an MCPServer instance with a ``printer``
 argument that selects which configured printer's client to use (omitted →
 primary), resolved via the :class:`PrinterRegistry`.
 
@@ -14,15 +14,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from .client import MoonrakerClient
-from .confirmation import contains_heater_command, needs_confirmation
+from .confirmation import DEFAULT_GATE, GcodeGate, needs_confirmation
 from .registry import PrinterRegistry
 
 # Shared, statically-described "which printer" argument. The concrete list of
-# valid names is dynamic, so it lives in the FastMCP server instructions and the
+# valid names is dynamic, so it lives in the MCP server instructions and the
 # list_printers tool rather than here.
 PrinterArg = Annotated[
     str | None,
@@ -222,12 +222,15 @@ async def cancel_print(client: MoonrakerClient, confirm: bool = False) -> Any:
     return await client.print_cancel()
 
 
-async def run_gcode(client: MoonrakerClient, script: str, confirm: bool = False) -> Any:
-    """Run a raw G-code script. Requires confirm=true if it commands a heater."""
-    if contains_heater_command(script) and not confirm:
+async def run_gcode(
+    client: MoonrakerClient, script: str, confirm: bool = False, gate: GcodeGate = DEFAULT_GATE
+) -> Any:
+    """Run a raw G-code script. Requires confirm=true if it contains a gated command."""
+    command = gate.match(script)
+    if command and not confirm:
         return needs_confirmation(
             "run_gcode",
-            detail=f"This script commands a heater and was not run: {script!r}",
+            detail=f"This script contains the gated command {command} and was not run: {script!r}",
         )
     return await client.run_gcode(script)
 
@@ -237,16 +240,18 @@ async def run_macro(
     name: str,
     params: dict[str, Any] | None = None,
     confirm: bool = False,
+    gate: GcodeGate = DEFAULT_GATE,
 ) -> Any:
     """Run a Klipper macro by name, with optional KEY=VALUE params."""
     parts = [name.strip()]
     for key, value in (params or {}).items():
         parts.append(f"{key}={value}")
     script = " ".join(parts)
-    if contains_heater_command(script) and not confirm:
+    command = gate.match(script)
+    if command and not confirm:
         return needs_confirmation(
             "run_macro",
-            detail=f"This macro invocation commands a heater and was not run: {script!r}",
+            detail=f"This macro invocation contains the gated command {command} and was not run: {script!r}",
         )
     return await client.run_gcode(script)
 
@@ -434,8 +439,8 @@ async def spoolman_proxy(
     )
 
 
-def register_tools(mcp: FastMCP, registry: PrinterRegistry) -> None:
-    """Register every tool on the FastMCP instance.
+def register_tools(mcp: MCPServer, registry: PrinterRegistry, gate: GcodeGate = DEFAULT_GATE) -> None:
+    """Register every tool on the MCPServer instance.
 
     Each tool takes ``printer`` (a configured printer name; omit for the primary)
     and resolves the matching client from ``registry``. An unknown name raises
@@ -557,9 +562,11 @@ def register_tools(mcp: FastMCP, registry: PrinterRegistry) -> None:
 
     @mcp.tool(name="run_gcode")
     async def run_gcode_tool(script: str, confirm: bool = False, printer: PrinterArg = None) -> Any:
-        """Run a raw G-code script. Requires confirm=true if it commands a heater
-        (M104/M109/M140/M190/M141/M191/SET_HEATER_TEMPERATURE/TEMPERATURE_WAIT)."""
-        return await run_gcode(registry.get(printer), script, confirm)
+        """Run a raw G-code script. Requires confirm=true if it contains a gated
+        command (heaters, PID_CALIBRATE, FIRMWARE_RESTART/RESTART/SAVE_CONFIG/M112
+        and any configured printer-specific macros); call
+        get_gated_gcode_commands for the full list."""
+        return await run_gcode(registry.get(printer), script, confirm, gate)
 
     @mcp.tool(name="run_macro")
     async def run_macro_tool(
@@ -569,8 +576,13 @@ def register_tools(mcp: FastMCP, registry: PrinterRegistry) -> None:
         printer: PrinterArg = None,
     ) -> Any:
         """Run a Klipper macro by name with optional KEY=VALUE params. Requires
-        confirm=true if the resulting command drives a heater."""
-        return await run_macro(registry.get(printer), name, params, confirm)
+        confirm=true if the resulting command contains a gated command."""
+        return await run_macro(registry.get(printer), name, params, confirm, gate)
+
+    @mcp.tool(name="get_gated_gcode_commands")
+    async def get_gated_gcode_commands_tool() -> Any:
+        """G-code commands and macros that run_gcode/run_macro only run with confirm=true."""
+        return list(gate.commands)
 
     @mcp.tool(name="emergency_stop")
     async def emergency_stop_tool(confirm: bool = False, printer: PrinterArg = None) -> Any:

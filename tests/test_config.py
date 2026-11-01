@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 
@@ -24,6 +25,7 @@ def test_default_localhost_when_nothing_set(tmp_path, monkeypatch):
     assert printers[0].url == "http://localhost:7125"
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="TOML printers files need tomllib (Python 3.11+)")
 def test_loads_toml_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "printers.toml").write_text(

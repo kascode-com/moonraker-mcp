@@ -1,12 +1,12 @@
 [project]
 name = "moonraker-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for controlling a Klipper 3D printer through the Moonraker API"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Moonraker MCP contributors" }]
 dependencies = [
-    "mcp[cli]>=1.2.0",
+    "mcp>=2.3,<3",
     "httpx>=0.27",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
@@ -19,6 +19,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "ruff>=0.15",
 ]
 
 [project.scripts]
@@ -33,4 +34,13 @@ packages = ["src/moonraker_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # upstream code is not reformatted, to keep merges from nixkor/moonraker-mcp easy

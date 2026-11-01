@@ -1,4 +1,4 @@
-"""FastMCP server wiring: build the app, gate it behind a bearer token, run it
+"""MCP server wiring: build the app, gate it behind a bearer token, run it
 over Streamable HTTP."""
 
 from __future__ import annotations
@@ -7,7 +7,9 @@ import logging
 import secrets
 
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from .config import Settings
 from .registry import PrinterRegistry
@@ -16,11 +18,17 @@ from .tools import register_tools
 logger = logging.getLogger("moonraker_mcp")
 
 # Endpoints that must remain reachable without the bearer token (health/liveness).
-_PUBLIC_PATHS = frozenset({"/health"})
+_PUBLIC_PATHS = frozenset({"/health", "/healthz"})
 
 
-def build_mcp(settings: Settings) -> tuple[FastMCP, PrinterRegistry]:
-    """Create a FastMCP instance with all Moonraker tools registered, plus the
+async def _health(request: Request) -> Response:
+    """Liveness: the process serves HTTP. Deliberately does not call Moonraker, so
+    a powered-off printer doesn't restart the server."""
+    return JSONResponse({"status": "ok"})
+
+
+def build_mcp(settings: Settings) -> tuple[MCPServer, PrinterRegistry]:
+    """Create an MCPServer instance with all Moonraker tools registered, plus the
     backing :class:`PrinterRegistry`."""
     printers = settings.resolve_printers()
     registry = PrinterRegistry(printers, timeout=settings.request_timeout)
@@ -35,13 +43,10 @@ def build_mcp(settings: Settings) -> tuple[FastMCP, PrinterRegistry]:
         "Call list_printers to enumerate them."
     )
 
-    mcp = FastMCP(
-        "moonraker",
-        host=settings.mcp_host,
-        port=settings.mcp_port,
-        instructions=instructions,
-    )
-    register_tools(mcp, registry)
+    mcp = MCPServer("moonraker", instructions=instructions)
+    for path in sorted(_PUBLIC_PATHS):
+        mcp.custom_route(path, methods=["GET"], include_in_schema=False)(_health)
+    register_tools(mcp, registry, settings.gcode_gate())
     return mcp, registry
 
 
@@ -85,7 +90,7 @@ def _close_on_shutdown(app, registry: PrinterRegistry):
     """ASGI middleware that closes the registry's HTTP clients when the ASGI
     lifespan shuts down.
 
-    FastMCP's app owns the Starlette ``lifespan`` (for its session manager), so
+    MCPServer's app owns the Starlette ``lifespan`` (for its session manager), so
     ``on_shutdown`` event handlers are ignored. Instead we intercept the lifespan
     channel and call :meth:`PrinterRegistry.aclose` once the inner app has
     reported ``lifespan.shutdown.complete``.
@@ -111,7 +116,8 @@ def run(settings: Settings | None = None) -> None:
     settings = settings or Settings()
 
     mcp, registry = build_mcp(settings)
-    app = mcp.streamable_http_app()
+    # Binding to localhost enables the SDK's DNS-rebinding protection.
+    app = mcp.streamable_http_app(host=settings.mcp_host)
     # Close per-printer HTTP clients cleanly when the server shuts down.
     app = _close_on_shutdown(app, registry)
 
