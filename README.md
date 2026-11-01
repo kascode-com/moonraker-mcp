@@ -1,5 +1,13 @@
 # Moonraker MCP
 
+> **kascode-com fork** of [nixkor/moonraker-mcp](https://github.com/nixkor/moonraker-mcp).
+> Changes from upstream:
+> - Runs on the MCP Python SDK 2.x (`FastMCP` → `MCPServer`); upstream fails to import on `mcp>=2`.
+> - Unauthenticated `/health` and `/healthz` liveness routes (upstream exempted `/health` from auth but never served it).
+> - `run_gcode`/`run_macro` also gate `PID_CALIBRATE`, `FIRMWARE_RESTART`, `RESTART`, `SAVE_CONFIG` and `M112`,
+>   plus printer-specific macros listed in `CONFIRM_GCODE_COMMANDS`; new `get_gated_gcode_commands` tool.
+> - `uv.lock`, ruff and a GitHub Actions test workflow.
+
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![MCP](https://img.shields.io/badge/MCP-server-purple)
@@ -37,8 +45,11 @@ as a yes/no. Gated operations:
 - `emergency_stop`
 - `cancel_print`
 - `pause_print`
-- `run_gcode` / `run_macro` - **only** when the command drives a heater
-  (`M104/M109/M140/M190/M141/M191/SET_HEATER_TEMPERATURE/TEMPERATURE_WAIT`)
+- `run_gcode` / `run_macro` - **only** when the script contains a gated command:
+  heaters (`M104/M109/M140/M190/M141/M191/SET_HEATER_TEMPERATURE/TEMPERATURE_WAIT/PID_CALIBRATE`),
+  restarts (`FIRMWARE_RESTART/RESTART/SAVE_CONFIG/M112`) and anything listed in
+  `CONFIRM_GCODE_COMMANDS` (e.g. vendor macros that heat the nozzle). Macros are opaque to
+  the server, so list every macro that heats, moves to a hot purge or restarts Klipper.
 - `start_print`, `resume_print`
 - `firmware_restart`, `restart_host`, `delete_file`
 
@@ -83,6 +94,7 @@ Copy `.env.example` to `.env` (or set the env vars in the systemd unit):
 | `MCP_PORT` | `8790` | Bind port |
 | `MCP_AUTH_TOKEN` | _(blank)_ | Bearer token clients must send. **Blank = unauthenticated** |
 | `REQUEST_TIMEOUT` | `10` | Per-request timeout to Moonraker (seconds) |
+| `CONFIRM_GCODE_COMMANDS` | _(blank)_ | Extra commands/macros (comma or space separated) that `run_gcode`/`run_macro` only run with `confirm=true` |
 
 ### One or many printers
 
@@ -112,9 +124,10 @@ working unchanged.
 ## Run locally (dev)
 
 ```bash
-python -m venv venv && ./venv/bin/pip install -e ".[dev]"   # Windows: venv\Scripts\pip
+uv sync --extra dev
 cp .env.example .env   # edit MOONRAKER_URL
-python -m moonraker_mcp
+uv run python -m moonraker_mcp
+uv run ruff check && uv run pytest   # before committing
 ```
 
 The MCP endpoint is served at `http://<host>:<port>/mcp` (Streamable HTTP - the
@@ -123,7 +136,7 @@ current MCP HTTP transport; this is what Claude's "HTTP/SSE" connector expects).
 ### Interactive testing with the MCP Inspector
 
 ```bash
-mcp dev src/moonraker_mcp/server.py   # or use the Inspector against the running URL
+npx @modelcontextprotocol/inspector   # then connect to http://localhost:8790/mcp
 ```
 
 ## Deploy on the Raspberry Pi

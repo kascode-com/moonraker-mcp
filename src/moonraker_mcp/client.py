@@ -39,7 +39,7 @@ class MoonrakerClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def __aenter__(self) -> "MoonrakerClient":
+    async def __aenter__(self) -> MoonrakerClient:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
